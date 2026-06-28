@@ -1,9 +1,12 @@
 # ============================================================
-# Security Groups -- least-privilege, explicit deny by default
-# No SG allows 0.0.0.0/0 SSH or RDP (CIS 5.2, 5.3)
+# Security Groups
+# Cross-SG references (app <-> rds) are broken out into
+# separate aws_security_group_rule resources to avoid the
+# circular dependency that occurs when both SGs reference
+# each other inline.
 # ============================================================
 
-# -- ALB: accepts HTTPS from internet, HTTP only for redirect --
+# -- ALB: accepts HTTPS/HTTP from internet --
 resource "aws_security_group" "alb" {
   name        = "cloudguard-alb-sg"
   description = "ALB: inbound HTTPS/HTTP from internet"
@@ -36,7 +39,8 @@ resource "aws_security_group" "alb" {
   tags = { Name = "cloudguard-alb-sg" }
 }
 
-# -- App tier: accepts traffic from ALB only, no direct internet --
+# -- App tier: accepts traffic from ALB only --
+# RDS egress rule is defined separately below to break the cycle
 resource "aws_security_group" "app" {
   name        = "cloudguard-app-sg"
   description = "App tier EC2: inbound from ALB only"
@@ -50,45 +54,27 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # Outbound: HTTPS for AWS API calls (SSM, S3, etc.) and DB access
   egress {
-    description = "HTTPS to AWS APIs and internet"
+    description = "HTTPS to AWS APIs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  egress {
-    description     = "PostgreSQL to RDS"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.rds.id]
-  }
-
   tags = { Name = "cloudguard-app-sg" }
 }
 
-# -- RDS: accepts PostgreSQL from app tier only --
+# -- RDS: no inline rules referencing app SG (defined separately below) --
 resource "aws_security_group" "rds" {
   name        = "cloudguard-rds-sg"
-  description = "RDS: inbound from app tier only, no public access"
+  description = "RDS: inbound from app tier only"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "PostgreSQL from app tier"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app.id]
-  }
-
-  # No egress needed -- RDS doesn't initiate outbound connections
   tags = { Name = "cloudguard-rds-sg" }
 }
 
-# -- Lambda: outbound HTTPS only (for AWS API calls and Bedrock) --
+# -- Lambda: outbound HTTPS only --
 resource "aws_security_group" "lambda" {
   name        = "cloudguard-lambda-sg"
   description = "Lambda functions: outbound HTTPS only"
@@ -105,7 +91,29 @@ resource "aws_security_group" "lambda" {
   tags = { Name = "cloudguard-lambda-sg" }
 }
 
-# -- VPC Endpoints: keep AWS API traffic off the public internet --
+# -- Cross-SG rules (added after both SGs exist, breaking the cycle) --
+
+resource "aws_security_group_rule" "app_to_rds" {
+  type                     = "egress"
+  description              = "PostgreSQL from app tier to RDS"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.app.id
+  source_security_group_id = aws_security_group.rds.id
+}
+
+resource "aws_security_group_rule" "rds_from_app" {
+  type                     = "ingress"
+  description              = "PostgreSQL from app tier"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rds.id
+  source_security_group_id = aws_security_group.app.id
+}
+
+# -- VPC Endpoints --
 resource "aws_vpc_endpoint" "ssm" {
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ssm"
