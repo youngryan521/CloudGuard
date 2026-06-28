@@ -5,7 +5,6 @@
 # EBS volumes encrypted with CMK
 # ============================================================
 
-# -- S3 bucket for app assets (config, static files) --
 resource "aws_s3_bucket" "app_assets" {
   bucket = "cloudguard-app-assets-${data.aws_caller_identity.current.account_id}"
   tags   = { Name = "cloudguard-app-assets" }
@@ -43,14 +42,13 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
 
-  # Access logs to S3 (audit trail)
   access_logs {
     bucket  = aws_s3_bucket.alb_logs.id
     prefix  = "alb"
     enabled = true
   }
 
-  drop_invalid_header_fields = true # Security best practice
+  drop_invalid_header_fields = true
 
   tags = { Name = "cloudguard-alb" }
 }
@@ -69,7 +67,6 @@ resource "aws_s3_bucket_public_access_block" "alb_logs" {
   restrict_public_buckets = true
 }
 
-# ALB needs specific bucket policy to write logs
 data "aws_elb_service_account" "main" {}
 
 resource "aws_s3_bucket_policy" "alb_logs" {
@@ -86,26 +83,11 @@ resource "aws_s3_bucket_policy" "alb_logs" {
   })
 }
 
-# -- HTTPS listener (production: use ACM cert; dev: comment out and use HTTP) --
-# resource "aws_lb_listener" "https" {
-#   load_balancer_arn = aws_lb.main.arn
-#   port              = 443
-#   protocol          = "HTTPS"
-#   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-#   certificate_arn   = var.acm_certificate_arn
-#   default_action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.app.arn
-#   }
-# }
-
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
-  # In production: redirect HTTP -> HTTPS
-  # For dev: forward directly
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
@@ -133,12 +115,30 @@ resource "aws_lb_target_group" "app" {
 }
 
 # -- Launch Template --
+# user_data uses printf to avoid nested heredoc syntax issues in HCL
+locals {
+  user_data_script = <<-SCRIPT
+    #!/bin/bash
+    set -euo pipefail
+    dnf update -y
+    dnf install -y nginx
+
+    printf '{"status": "healthy", "service": "cloudguard-app"}\n' \
+      > /usr/share/nginx/html/health
+
+    printf 'server {\n  listen 8080;\n  location /health {\n    root /usr/share/nginx/html;\n    default_type application/json;\n  }\n  location / {\n    root /usr/share/nginx/html;\n  }\n}\n' \
+      > /etc/nginx/conf.d/app.conf
+
+    systemctl enable nginx
+    systemctl start nginx
+  SCRIPT
+}
+
 resource "aws_launch_template" "app" {
   name_prefix   = "cloudguard-app-"
   image_id      = data.aws_ssm_parameter.al2023_ami.value
   instance_type = var.app_instance_type
 
-  # No key pair -- SSM Session Manager only
   key_name = null
 
   vpc_security_group_ids = [aws_security_group.app.id]
@@ -150,11 +150,10 @@ resource "aws_launch_template" "app" {
   # IMDSv2 required -- prevents SSRF-based metadata theft
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                 = "required" # IMDSv2
+    http_tokens                 = "required"
     http_put_response_hop_limit = 1
   }
 
-  # Encrypted root volume with CMK
   block_device_mappings {
     device_name = "/dev/xvda"
     ebs {
@@ -167,40 +166,10 @@ resource "aws_launch_template" "app" {
   }
 
   monitoring {
-    enabled = true # Detailed CloudWatch monitoring
+    enabled = true
   }
 
-  user_data = base64encode(<<-USERDATA
-    #!/bin/bash
-    set -euo pipefail
-
-    # Install nginx as placeholder app server
-    dnf update -y
-    dnf install -y nginx
-
-    # Simple health check endpoint
-    cat > /usr/share/nginx/html/health << 'EOF'
-    {"status": "healthy", "service": "cloudguard-app"}
-    EOF
-
-    # Configure nginx on port 8080
-    cat > /etc/nginx/conf.d/app.conf << 'EOF'
-    server {
-        listen 8080;
-        location /health {
-            root /usr/share/nginx/html;
-            default_type application/json;
-        }
-        location / {
-            root /usr/share/nginx/html;
-        }
-    }
-    EOF
-
-    systemctl enable nginx
-    systemctl start nginx
-  USERDATA
-  )
+  user_data = base64encode(local.user_data_script)
 
   lifecycle {
     create_before_destroy = true
