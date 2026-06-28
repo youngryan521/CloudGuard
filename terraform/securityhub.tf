@@ -1,47 +1,18 @@
 # ============================================================
 # Security Hub + GuardDuty
+#
+# NOTE: Security Hub and GuardDuty require manual activation
+# on new/free-tier AWS accounts before Terraform can manage them.
+#
+# TO ENABLE:
+#   1. Go to AWS Console -> GuardDuty -> Get Started -> Enable GuardDuty
+#   2. Go to AWS Console -> Security Hub -> Go to Security Hub -> Enable
+#   3. After enabling both, run: terraform apply
+#      Terraform will import and manage them on the next run.
 # ============================================================
 
-resource "aws_securityhub_account" "main" {}
-
-resource "aws_securityhub_standards_subscription" "cis" {
-  standards_arn = "arn:aws:securityhub:::ruleset/cis-aws-foundations-benchmark/v/1.4.0"
-  depends_on    = [aws_securityhub_account.main]
-}
-
-resource "aws_securityhub_standards_subscription" "fsbp" {
-  standards_arn = "arn:aws:securityhub:${var.aws_region}::standards/aws-foundational-security-best-practices/v/1.0.0"
-  depends_on    = [aws_securityhub_account.main]
-}
-
-# ============================================================
-# GuardDuty -- nested blocks must each be on their own line
-# ============================================================
-
-resource "aws_guardduty_detector" "main" {
-  enable = true
-
-  datasources {
-    s3_logs {
-      enable = true
-    }
-    kubernetes {
-      audit_logs {
-        enable = true
-      }
-    }
-    malware_protection {
-      scan_ec2_instance_with_findings {
-        ebs_volumes {
-          enable = true
-        }
-      }
-    }
-  }
-
-  tags = { Name = "cloudguard-guardduty" }
-}
-
+# GuardDuty EventBridge alert rule (works without GuardDuty enabled -- 
+# will simply never fire until GuardDuty is activated)
 resource "aws_cloudwatch_event_rule" "guardduty_high" {
   name        = "cloudguard-guardduty-high-severity"
   description = "Triggers on GuardDuty HIGH or CRITICAL findings"

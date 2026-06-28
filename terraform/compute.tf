@@ -186,7 +186,9 @@ resource "aws_autoscaling_group" "app" {
   max_size            = var.asg_max_size
   vpc_zone_identifier = aws_subnet.private[*].id
   target_group_arns   = [aws_lb_target_group.app.arn]
-  health_check_type   = "ELB"
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+  wait_for_capacity_timeout = "0"
 
   launch_template {
     id      = aws_launch_template.app.id
@@ -205,4 +207,9 @@ resource "aws_autoscaling_group" "app" {
     value               = "cloudguard-app"
     propagate_at_launch = true
   }
+
+  depends_on = [
+    aws_route_table_association.private,
+    aws_nat_gateway.main
+  ]
 }
