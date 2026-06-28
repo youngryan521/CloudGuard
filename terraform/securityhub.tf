@@ -1,37 +1,40 @@
 # ============================================================
 # Security Hub + GuardDuty
-# Security Hub aggregates findings from: GuardDuty, Config,
-# Inspector, Macie into one normalized view.
-# CIS AWS Foundations Benchmark v1.4 enabled as standard.
 # ============================================================
 
 resource "aws_securityhub_account" "main" {}
 
-# CIS AWS Foundations Benchmark v1.4
 resource "aws_securityhub_standards_subscription" "cis" {
   standards_arn = "arn:aws:securityhub:::ruleset/cis-aws-foundations-benchmark/v/1.4.0"
   depends_on    = [aws_securityhub_account.main]
 }
 
-# AWS Foundational Security Best Practices v1.0
 resource "aws_securityhub_standards_subscription" "fsbp" {
   standards_arn = "arn:aws:securityhub:${var.aws_region}::standards/aws-foundational-security-best-practices/v/1.0.0"
   depends_on    = [aws_securityhub_account.main]
 }
 
 # ============================================================
-# GuardDuty
+# GuardDuty -- nested blocks must each be on their own line
 # ============================================================
 
 resource "aws_guardduty_detector" "main" {
   enable = true
 
   datasources {
-    s3_logs { enable = true }
-    kubernetes { audit_logs { enable = true } }
+    s3_logs {
+      enable = true
+    }
+    kubernetes {
+      audit_logs {
+        enable = true
+      }
+    }
     malware_protection {
       scan_ec2_instance_with_findings {
-        ebs_volumes { enable = true }
+        ebs_volumes {
+          enable = true
+        }
       }
     }
   }
@@ -39,7 +42,6 @@ resource "aws_guardduty_detector" "main" {
   tags = { Name = "cloudguard-guardduty" }
 }
 
-# EventBridge rule: HIGH severity GuardDuty finding -> SNS alert
 resource "aws_cloudwatch_event_rule" "guardduty_high" {
   name        = "cloudguard-guardduty-high-severity"
   description = "Triggers on GuardDuty HIGH or CRITICAL findings"
@@ -48,7 +50,7 @@ resource "aws_cloudwatch_event_rule" "guardduty_high" {
     source      = ["aws.guardduty"]
     detail-type = ["GuardDuty Finding"]
     detail = {
-      severity = [{ numeric = [">=", 7] }] # HIGH (7-8.9) and CRITICAL (9-10)
+      severity = [{ numeric = [">=", 7] }]
     }
   })
 
