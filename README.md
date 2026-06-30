@@ -22,12 +22,12 @@
 > Deployed and validated in a real AWS account — June 2026.
 
 ### Security Hub — 84% Compliance Score
-![Security Hub Score](docs/screenshots/security_hub_score.png)
+![Security Hub Score](docs/screenshots/security_hub_score.png.png)
 
 *354 of 421 controls passing across CIS v1.4, NIST SP 800-53 Rev 5, and AWS FSBP v1.0.0.*
 
 ### CloudWatch Security Dashboard
-![CloudWatch Dashboard](docs/screenshots/cloudwatch_dashboard.png)
+![CloudWatch Dashboard](docs/screenshots/cloudwatch_dashboard.png.png)
 
 *Live telemetry: unauthorized API calls, root account usage, MFA compliance, IAM changes, ALB errors, RDS CPU, and ASG instance count — all sourced from real CloudTrail activity.*
 
