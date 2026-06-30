@@ -9,11 +9,32 @@
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.6-7B42BC?logo=terraform)](https://www.terraform.io/)
 [![AWS](https://img.shields.io/badge/AWS-Cloud-FF9900?logo=amazon-aws)](https://aws.amazon.com/)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![CIS Benchmark](https://img.shields.io/badge/CIS-AWS%20v1.4-blue)](docs/compliance_matrix.md)
 [![NIST 800-53](https://img.shields.io/badge/NIST-SP%20800--53%20Rev%205-blue)](docs/compliance_matrix.md)
 
 </div>
+
+---
+
+## Live Results
+
+> Deployed and validated in a real AWS account — June 2026.
+
+### Security Hub — 84% Compliance Score
+![Security Hub Score](docs/screenshots/security_hub_score.png)
+
+*354 of 421 controls passing across CIS v1.4, NIST SP 800-53 Rev 5, and AWS FSBP v1.0.0.*
+
+### CloudWatch Security Dashboard
+![CloudWatch Dashboard](docs/screenshots/cloudwatch_dashboard.png)
+
+*Live telemetry: unauthorized API calls, root account usage, MFA compliance, IAM changes, ALB errors, RDS CPU, and ASG instance count — all sourced from real CloudTrail activity.*
+
+### Lambda Compliance Report — Succeeded
+![Lambda Test](docs/screenshots/lambda_compliance_report.png)
+
+*118 active findings pulled from Security Hub (4 critical, 9 high). Report saved to S3 as JSON. Runs daily on a cron schedule.*
 
 ---
 
@@ -105,7 +126,7 @@ CloudGuard is a fully automated AWS security and compliance environment deployed
 - **23 AWS Config managed rules** covering CIS v1.4 Sections 1, 2, 3, 5 and NIST SP 800-53
 - **14 CloudWatch metric filters** implementing every CIS Section 3 logging control
 - **Security Hub** aggregates findings from Config, GuardDuty, and Inspector into a normalized view
-- **CIS AWS Foundations Benchmark v1.4** and **AWS FSBP v1.0** enabled as Security Hub standards
+- **CIS AWS Foundations Benchmark v1.4**, **NIST SP 800-53 Rev 5**, and **AWS FSBP v1.0** enabled as Security Hub standards
 
 ### Auto-Remediation (< 2 min time-to-fix)
 | Violation | Trigger | Action |
@@ -132,7 +153,7 @@ A daily Lambda queries Security Hub findings, calls **Amazon Bedrock (Claude 3 H
 | AWS IAM | Security | Least-privilege roles per component |
 | AWS CloudTrail | Audit | Multi-region, log file validation, KMS encrypted |
 | AWS Config | Compliance | 23 managed rules, continuous resource evaluation |
-| AWS Security Hub | Compliance | Aggregated findings, CIS v1.4 + FSBP standards |
+| AWS Security Hub | Compliance | Aggregated findings, CIS v1.4 + NIST 800-53 + FSBP standards |
 | Amazon GuardDuty | Threat Detection | ML-based threat detection, malware scanning |
 | Amazon CloudWatch | Monitoring | 14 metric filters, alarms, security dashboard |
 | AWS Lambda (Python 3.12) | Automation | Auto-remediation + AI compliance reports |
@@ -210,7 +231,17 @@ terraform plan   # Review ~85 resources before applying
 terraform apply  # Takes ~12 minutes (RDS is the slow part)
 ```
 
-### 4. Verify
+### 4. Enable Security Services
+
+After apply, manually enable these two services in the AWS Console (required once per account):
+
+1. **GuardDuty** → Console → GuardDuty → Get Started → Enable GuardDuty
+2. **Security Hub** → Console → Security Hub → Go to Security Hub → Enable
+   - Select: AWS Foundational Security Best Practices, CIS v1.4, NIST SP 800-53 Rev 5
+
+Security Hub begins populating compliance scores within 30–60 minutes.
+
+### 5. Verify
 
 After apply completes, Terraform outputs:
 
@@ -220,11 +251,7 @@ cloudwatch_dashboard_url  = "https://us-east-1.console.aws.amazon.com/cloudwatch
 security_hub_url          = "https://us-east-1.console.aws.amazon.com/securityhub/..."
 ```
 
-- Open the **Security Hub URL** — within 30 minutes you'll see a CIS Benchmark compliance score
-- Open the **CloudWatch Dashboard** — all 14 CIS 3.x alarms visible
-- Manually trigger the compliance report Lambda from the AWS Console to generate your first report
-
-### 5. Tear down
+### 6. Tear down
 
 ```bash
 terraform destroy
@@ -250,7 +277,7 @@ CloudGuard/
 │   ├── database.tf             # RDS PostgreSQL, Secrets Manager, enhanced monitoring
 │   ├── cloudtrail.tf           # Multi-region trail, S3 bucket, CloudWatch integration
 │   ├── config.tf               # Config recorder + 23 managed rules
-│   ├── securityhub.tf          # Security Hub, CIS standard, GuardDuty detector
+│   ├── securityhub.tf          # EventBridge rule for GuardDuty HIGH/CRITICAL findings
 │   ├── monitoring.tf           # 14 CIS metric filters, alarms, CloudWatch dashboard
 │   └── lambda.tf               # Lambda functions, EventBridge rules, reports bucket
 │
@@ -260,7 +287,8 @@ CloudGuard/
 │   └── compliance_report.py    # Queries Security Hub, calls Bedrock, saves JSON report
 │
 └── docs/
-    └── compliance_matrix.md    # Full CIS v1.4 + NIST SP 800-53 Rev 5 control mapping
+    ├── compliance_matrix.md    # Full CIS v1.4 + NIST SP 800-53 Rev 5 control mapping
+    └── screenshots/            # Live deployment evidence
 ```
 
 ---
@@ -324,13 +352,17 @@ Key variables in `variables.tf` to adjust for your environment:
 - `terraform.tfvars` is excluded from Git via `.gitignore` — never commit credentials
 - For production: migrate `db_password` to AWS Secrets Manager rotation; use Terraform remote state in S3 with DynamoDB locking
 - GuardDuty and Security Hub have small per-event costs — review pricing for high-traffic accounts before enabling in prod
-- Bedrock access must be enabled in the AWS Console (Model Access page) before the compliance report Lambda will work
+- Bedrock models are auto-enabled on first invocation — no manual activation required
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+Copyright (c) 2026 Ryan Young (youngryan521). All Rights Reserved.
+
+This software and all associated source code, documentation, and files are the exclusive property of the author. The software may be viewed for personal reference only. Any other use requires prior written permission.
+
+See [LICENSE](LICENSE) for full terms.
 
 ---
 
